@@ -1,10 +1,12 @@
 """Health and readiness probes with Prometheus metrics."""
 
 from __future__ import annotations
-
+import json
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
+
+from fastapi.responses import JSONResponse
 
 from fastapi import APIRouter, HTTPException
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
@@ -14,6 +16,14 @@ from src.gateway.schemas import HealthStatus, ReadyStatus
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+class DateTimeEncoder(json.JSONEncoder):
+    """Custom JSON encoder for datetime objects."""
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
 
 # Prometheus metrics
 REQUEST_COUNT = Counter(
@@ -50,7 +60,7 @@ class HealthManager:
     def __init__(self) -> None:
         """Initialize health manager."""
         self.backends: dict[str, Backend] = {}
-        self.startup_time = datetime.utcnow()
+        self.startup_time = datetime.now(timezone.utc)
         self._health_status: dict[str, bool] = {}
     
     def register_backend(self, name: str, backend: Backend) -> None:
@@ -87,7 +97,7 @@ class HealthManager:
         
         return HealthStatus(
             status=status,  # type: ignore
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             backends=backend_status,
         )
     
@@ -112,8 +122,8 @@ class HealthManager:
                 logger.warning("Readiness check failed", backend=name, error=str(e))
         
         return ReadyStatus(
-            ready=len(failed) == 0,
-            timestamp=datetime.utcnow(),
+            ready=len(failed) == 0 and len(loaded) > 0,
+            timestamp=datetime.now(timezone.utc),
             loaded_backends=loaded,
             failed_backends=failed,
         )
@@ -186,7 +196,10 @@ async def readiness_check() -> ReadyStatus:
     status = await manager.check_readiness()
     
     if not status.ready:
-        raise HTTPException(status_code=503, detail=status.model_dump())
+        raise HTTPException(
+            status_code=503, 
+            detail=json.loads(json.dumps(status.model_dump(), cls=DateTimeEncoder))
+        )
     
     return status
 

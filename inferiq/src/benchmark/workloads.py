@@ -86,7 +86,6 @@ class WorkloadGenerator:
         if distribution == "uniform":
             actual_target = int(target_tokens * random.uniform(1 - variance, 1 + variance))
         elif distribution == "normal":
-            import random
             actual_target = int(random.gauss(target_tokens, target_tokens * variance))
         else:
             actual_target = target_tokens

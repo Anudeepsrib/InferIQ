@@ -236,8 +236,8 @@ class TestFormatting:
         table = format_metrics_table(sample_benchmark_metrics)
         
         assert "test-model" in table
-        assert "vLLM" in table
-        assert "tokens/sec" in table
+        assert "vllm" in table
+        assert "Tokens/sec" in table
         assert "ms" in table
 
 

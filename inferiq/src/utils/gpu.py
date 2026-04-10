@@ -31,7 +31,10 @@ class GPUPoller:
             return True
         
         try:
-            import pynvml
+            try:
+                import nvidia_ml_py as pynvml
+            except ImportError:
+                import pynvml
             pynvml.nvmlInit()
             
             device_count = pynvml.nvmlDeviceGetCount()

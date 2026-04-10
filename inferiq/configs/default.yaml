@@ -96,5 +96,5 @@ backends:
     checkpoint_name: null
     tensor_model_parallel_size: 1
     pipeline_model_parallel_size: 1
-    precision: 16  # 16, 32, bf16
+    precision: "16"  # 16, 32, bf16
     max_batch_size: 32

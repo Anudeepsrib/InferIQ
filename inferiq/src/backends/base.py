@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from src.gateway.schemas import (
@@ -36,7 +36,7 @@ class BackendStats:
             self.failed_requests += 1
         
         self.total_tokens_generated += tokens
-        self.last_request_time = datetime.utcnow()
+        self.last_request_time = datetime.now(timezone.utc)
         
         # Update rolling average (keep last 100)
         self.rolling_latencies.append(latency_ms)

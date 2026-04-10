@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field, field_validator
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 
@@ -26,7 +26,7 @@ class ModelInfo(BaseModel):
     """Information about a registered model."""
     id: str = Field(..., description="Unique model identifier")
     object: Literal["model"] = "model"
-    created: int = Field(default_factory=lambda: int(datetime.utcnow().timestamp()))
+    created: int = Field(default_factory=lambda: int(datetime.now(timezone.utc).timestamp()))
     owned_by: str = Field(default="inferiq")
     backend: ModelBackend = Field(..., description="Inference backend type")
     display_name: str = Field(..., description="Human-readable model name")
@@ -83,7 +83,7 @@ class CompletionResponse(BaseModel):
     """OpenAI-compatible completion response."""
     id: str = Field(..., description="Unique completion ID")
     object: Literal["text_completion"] = "text_completion"
-    created: int = Field(default_factory=lambda: int(datetime.utcnow().timestamp()))
+    created: int = Field(default_factory=lambda: int(datetime.now(timezone.utc).timestamp()))
     model: str = Field(..., description="Model ID used")
     choices: list[CompletionChoice] = Field(...)
     usage: CompletionUsage = Field(...)
@@ -141,7 +141,7 @@ class ChatCompletionResponse(BaseModel):
     """OpenAI-compatible chat completion response."""
     id: str = Field(...)
     object: Literal["chat.completion"] = "chat.completion"
-    created: int = Field(default_factory=lambda: int(datetime.utcnow().timestamp()))
+    created: int = Field(default_factory=lambda: int(datetime.now(timezone.utc).timestamp()))
     model: str = Field(...)
     choices: list[ChatCompletionChoice] = Field(...)
     usage: CompletionUsage = Field(...)
@@ -184,7 +184,7 @@ class ModelListResponse(BaseModel):
 class HealthStatus(BaseModel):
     """Health check response."""
     status: Literal["healthy", "unhealthy", "degraded"] = Field(...)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     version: str = Field(default="0.1.0")
     backends: dict[str, str] = Field(default_factory=dict, description="Per-backend health status")
 
@@ -192,7 +192,7 @@ class HealthStatus(BaseModel):
 class ReadyStatus(BaseModel):
     """Readiness probe response."""
     ready: bool = Field(...)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     loaded_backends: list[str] = Field(default_factory=list)
     failed_backends: list[str] = Field(default_factory=list)
 
@@ -200,7 +200,7 @@ class ReadyStatus(BaseModel):
 class ErrorResponse(BaseModel):
     """Error response model."""
     error: dict[str, Any] = Field(...)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     request_id: Optional[str] = Field(None)
 
 
@@ -233,7 +233,7 @@ class BenchmarkResult(BaseModel):
     
     # Run metadata
     num_runs: int = Field(..., ge=1)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     config: dict[str, Any] = Field(default_factory=dict)
     raw_results: list[GenerateResult] = Field(default_factory=list)
 
@@ -249,7 +249,7 @@ class GPUStats(BaseModel):
     temperature_c: Optional[float] = Field(None)
     power_draw_w: Optional[float] = Field(None)
     power_limit_w: Optional[float] = Field(None)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ModelConfig(BaseModel):

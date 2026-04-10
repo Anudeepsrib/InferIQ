@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import statistics
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -84,7 +84,7 @@ class BenchmarkMetrics:
     cost: CostMetrics = field(default_factory=CostMetrics)
     
     # Metadata
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     config: dict[str, Any] = field(default_factory=dict)
     raw_results: list[GenerateResult] = field(default_factory=list)
     
