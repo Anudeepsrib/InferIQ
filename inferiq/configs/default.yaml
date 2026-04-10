@@ -1,0 +1,100 @@
+# Default benchmark configuration for InferIQ
+# This file defines the standard benchmark sweep parameters
+
+benchmark:
+  name: "default_benchmark"
+  description: "Default benchmark configuration for comparing LLM inference backends"
+  
+  # Prompt length configurations (in tokens)
+  prompt_lengths:
+    - 128
+    - 256
+    - 512
+    - 1024
+  
+  # Batch sizes to test
+  batch_sizes:
+    - 1
+    - 4
+    - 8
+    - 16
+    - 32
+  
+  # Output token configurations
+  max_tokens:
+    - 128
+    - 256
+  
+  # Warmup iterations (not measured)
+  warmup_runs: 3
+  
+  # Measured iterations for statistics
+  measured_runs: 10
+  
+  # Output directory for results
+  output_dir: "results"
+  
+  # Result file naming template
+  result_filename_template: "{model}_{backend}_{prompt_len}_{batch_size}_{timestamp}.json"
+  
+  # Resumption settings
+  resume: true
+  resume_state_file: ".benchmark_state.json"
+  
+  # GPU profiling settings
+  profiling:
+    enabled: true
+    record_cuda_kernels: true
+    export_chrome_trace: true
+    export_nsys_format: true
+    max_profiler_entries: 1000000
+  
+  # GPU polling interval (seconds)
+  gpu_poll_interval: 0.1
+  
+  # Cost estimation (USD per GPU hour)
+  gpu_pricing:
+    a100_40gb: 2.50
+    a100_80gb: 3.00
+    h100: 4.50
+    v100: 1.50
+    default: 2.00
+  
+  # Timeout settings (seconds)
+  timeouts:
+    model_load: 300
+    inference: 120
+    health_check: 30
+  
+  # Logging settings
+  logging:
+    level: INFO
+    format: json
+    file: null  # null for stdout only
+
+# Backend-specific settings
+backends:
+  vllm:
+    tensor_parallel_size: 1
+    gpu_memory_utilization: 0.90
+    max_num_seqs: 256
+    max_num_batched_tokens: 4096
+    quantization: null  # null, "awq", "gptq", "squeezellm"
+    dtype: auto  # auto, float16, bfloat16, float32
+    trust_remote_code: false
+    
+  nim:
+    base_url: "http://localhost:8000"
+    api_key: null
+    timeout: 120.0
+    max_retries: 3
+    retry_delay: 1.0
+    health_check_interval: 30
+    
+  nemo:
+    model_dir: null
+    checkpoint_name: null
+    tensor_model_parallel_size: 1
+    pipeline_model_parallel_size: 1
+    precision: 16  # 16, 32, bf16
+    max_batch_size: 32

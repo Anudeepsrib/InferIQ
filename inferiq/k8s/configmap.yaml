@@ -1,0 +1,95 @@
+# Kubernetes ConfigMap for InferIQ configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: inferiq-config
+  namespace: inferiq
+data:
+  default.yaml: |
+    benchmark:
+      name: "k8s_benchmark"
+      prompt_lengths: [128, 256, 512, 1024]
+      batch_sizes: [1, 4, 8, 16, 32]
+      max_tokens: [128, 256]
+      warmup_runs: 3
+      measured_runs: 10
+      output_dir: "/app/results"
+      resume: true
+      profiling:
+        enabled: true
+        record_cuda_kernels: true
+        export_chrome_trace: true
+        export_nsys_format: true
+      gpu_poll_interval: 0.1
+      gpu_pricing:
+        a100_40gb: 2.50
+        a100_80gb: 3.00
+        h100: 4.50
+        v100: 1.50
+        default: 2.00
+      timeouts:
+        model_load: 300
+        inference: 120
+        health_check: 30
+      logging:
+        level: INFO
+        format: json
+
+    backends:
+      vllm:
+        tensor_parallel_size: 1
+        gpu_memory_utilization: 0.90
+        max_num_seqs: 256
+        max_num_batched_tokens: 4096
+      nim:
+        base_url: "http://nim-service:8000"
+        timeout: 120.0
+        max_retries: 3
+        retry_delay: 1.0
+      nemo:
+        tensor_model_parallel_size: 1
+        pipeline_model_parallel_size: 1
+        precision: "bf16"
+        max_batch_size: 32
+
+  models.yaml: |
+    registry:
+      - name: "mistral-7b-instruct-vllm"
+        display_name: "Mistral 7B Instruct (vLLM)"
+        model_id: "mistralai/Mistral-7B-Instruct-v0.2"
+        backend: "vllm"
+        parameters:
+          size: "7B"
+          architecture: "transformer"
+          context_length: 32768
+        config:
+          tensor_parallel_size: 1
+          gpu_memory_utilization: 0.90
+          dtype: "bfloat16"
+        tags:
+          - "instruction-tuned"
+          - "7b"
+          - "vllm"
+
+      - name: "llama-3-8b-nim"
+        display_name: "Llama 3 8B (NVIDIA NIM)"
+        model_id: "meta/llama-3-8b-instruct"
+        backend: "nim"
+        parameters:
+          size: "8B"
+          architecture: "transformer"
+          context_length: 8192
+        config:
+          base_url: "http://nim-service:8000"
+          timeout: 120.0
+        tags:
+          - "instruction-tuned"
+          - "8b"
+          - "nim"
+
+    defaults:
+      benchmark_models:
+        - "mistral-7b-instruct-vllm"
+        - "llama-3-8b-nim"
+      gateway_models:
+        - "mistral-7b-instruct-vllm"

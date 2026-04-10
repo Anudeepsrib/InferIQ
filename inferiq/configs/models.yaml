@@ -1,0 +1,116 @@
+# Model registry for InferIQ
+# Defines available models, their backends, and configurations
+
+registry:
+  # Mistral 7B Instruct via vLLM
+  - name: "mistral-7b-instruct-vllm"
+    display_name: "Mistral 7B Instruct (vLLM)"
+    model_id: "mistralai/Mistral-7B-Instruct-v0.2"
+    backend: "vllm"
+    parameters:
+      size: "7B"
+      architecture: "transformer"
+      context_length: 32768
+    config:
+      tensor_parallel_size: 1
+      gpu_memory_utilization: 0.90
+      quantization: null
+      dtype: "bfloat16"
+      trust_remote_code: false
+      enable_prefix_caching: true
+    tags:
+      - "instruction-tuned"
+      - "7b"
+      - "vllm"
+    
+  # Llama 3 8B via NVIDIA NIM
+  - name: "llama-3-8b-nim"
+    display_name: "Llama 3 8B (NVIDIA NIM)"
+    model_id: "meta/llama-3-8b-instruct"
+    backend: "nim"
+    parameters:
+      size: "8B"
+      architecture: "transformer"
+      context_length: 8192
+    config:
+      nim_container: "nvcr.io/nim/meta/llama-3-8b-instruct:latest"
+      nim_port: 8000
+      tensor_parallel_size: 1
+      gpu_memory_utilization: 0.90
+      quantization: null
+    tags:
+      - "instruction-tuned"
+      - "8b"
+      - "nim"
+    
+  # Llama 3 8B via NeMo
+  - name: "llama-3-8b-nemo"
+    display_name: "Llama 3 8B (NeMo)"
+    model_id: "meta/llama-3-8b-instruct"
+    backend: "nemo"
+    parameters:
+      size: "8B"
+      architecture: "transformer"
+      context_length: 8192
+    config:
+      checkpoint_path: null  # Set at runtime
+      tensor_model_parallel_size: 1
+      pipeline_model_parallel_size: 1
+      precision: "bf16"
+      max_batch_size: 32
+    tags:
+      - "instruction-tuned"
+      - "8b"
+      - "nemo"
+    
+  # Additional models for extended benchmarking
+  
+  # Llama 2 13B via vLLM
+  - name: "llama-2-13b-chat-vllm"
+    display_name: "Llama 2 13B Chat (vLLM)"
+    model_id: "meta-llama/Llama-2-13b-chat-hf"
+    backend: "vllm"
+    parameters:
+      size: "13B"
+      architecture: "transformer"
+      context_length: 4096
+    config:
+      tensor_parallel_size: 1
+      gpu_memory_utilization: 0.90
+      quantization: null
+      dtype: "bfloat16"
+    tags:
+      - "chat"
+      - "13b"
+      - "vllm"
+    
+  # Mixtral 8x7B via vLLM (requires multi-GPU)
+  - name: "mixtral-8x7b-vllm"
+    display_name: "Mixtral 8x7B (vLLM)"
+    model_id: "mistralai/Mixtral-8x7B-Instruct-v0.1"
+    backend: "vllm"
+    parameters:
+      size: "8x7B"
+      architecture: "moe"
+      context_length: 32768
+    config:
+      tensor_parallel_size: 2
+      gpu_memory_utilization: 0.95
+      quantization: null
+      dtype: "bfloat16"
+    tags:
+      - "instruction-tuned"
+      - "moe"
+      - "47b-effective"
+      - "multi-gpu"
+      - "vllm"
+
+# Default models to use when none specified
+defaults:
+  benchmark_models:
+    - "mistral-7b-instruct-vllm"
+    - "llama-3-8b-nim"
+    - "llama-3-8b-nemo"
+  
+  gateway_models:
+    - "mistral-7b-instruct-vllm"

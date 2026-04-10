@@ -1,0 +1,80 @@
+# vLLM worker deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inferiq-vllm
+  namespace: inferiq
+  labels:
+    app: inferiq-vllm
+    component: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: inferiq-vllm
+  template:
+    metadata:
+      labels:
+        app: inferiq-vllm
+        component: backend
+    spec:
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              name: http
+          command:
+            - python
+            - -m
+            - vllm.entrypoints.openai.api_server
+            - --model
+            - "mistralai/Mistral-7B-Instruct-v0.2"
+            - --tensor-parallel-size
+            - "1"
+            - --gpu-memory-utilization
+            - "0.90"
+            - --max-num-seqs
+            - "256"
+            - --max-model-len
+            - "32768"
+            - --dtype
+            - "bfloat16"
+          env:
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: "0"
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+              memory: "32Gi"
+              cpu: "8"
+            requests:
+              memory: "16Gi"
+              cpu: "4"
+          volumeMounts:
+            - name: model-cache
+              mountPath: /root/.cache/huggingface
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            timeoutSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 10
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: inferiq-models-pvc
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule

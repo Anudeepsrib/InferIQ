@@ -1,0 +1,106 @@
+# Horizontal Pod Autoscaler for Gateway based on custom metrics
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: inferiq-gateway-hpa
+  namespace: inferiq
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: inferiq-gateway
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    # Scale based on CPU utilization
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    # Scale based on memory utilization
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+
+---
+# PodMonitor for Prometheus metrics (optional - requires Prometheus Operator)
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: inferiq-gateway-metrics
+  namespace: inferiq
+  labels:
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: inferiq-gateway
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+
+---
+# Custom Metric for GPU utilization (requires custom metrics API)
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: inferiq-gateway-gpu-hpa
+  namespace: inferiq
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: inferiq-gateway
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    # Custom metric for GPU utilization (requires DCGM or similar)
+    - type: Pods
+      pods:
+        metric:
+          name: dcgm_gpu_utilization
+        target:
+          type: AverageValue
+          averageValue: "80"
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120
+
+---
+# Namespace for InferIQ
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: inferiq
+  labels:
+    name: inferiq
+    gpu: "true"

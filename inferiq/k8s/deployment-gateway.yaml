@@ -1,0 +1,118 @@
+# Gateway deployment with GPU support
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inferiq-gateway
+  namespace: inferiq
+  labels:
+    app: inferiq-gateway
+    component: gateway
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: inferiq-gateway
+  template:
+    metadata:
+      labels:
+        app: inferiq-gateway
+        component: gateway
+    spec:
+      containers:
+        - name: gateway
+          image: inferiq/gateway:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              name: http
+              protocol: TCP
+          env:
+            - name: INFERIQ_CONFIG_DIR
+              value: "/app/configs"
+            - name: INFERIQ_GATEWAY_HOST
+              value: "0.0.0.0"
+            - name: INFERIQ_GATEWAY_PORT
+              value: "8000"
+            - name: INFERIQ_GATEWAY_WORKERS
+              value: "1"
+            - name: INFERIQ_BENCHMARK_LOGGING_LEVEL
+              value: "INFO"
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: "all"
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+              memory: "16Gi"
+              cpu: "4"
+            requests:
+              memory: "8Gi"
+              cpu: "2"
+          volumeMounts:
+            - name: config
+              mountPath: /app/configs
+              readOnly: true
+            - name: results
+              mountPath: /app/results
+            - name: model-cache
+              mountPath: /models
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: config
+          configMap:
+            name: inferiq-config
+        - name: results
+          persistentVolumeClaim:
+            claimName: inferiq-results-pvc
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: inferiq-models-pvc
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+
+---
+# Results PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: inferiq-results-pvc
+  namespace: inferiq
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+# Model Cache PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: inferiq-models-pvc
+  namespace: inferiq
+spec:
+  accessModes:
+    - ReadOnlyMany
+  resources:
+    requests:
+      storage: 100Gi

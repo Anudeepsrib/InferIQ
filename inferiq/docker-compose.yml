@@ -1,0 +1,157 @@
+# Docker Compose for InferIQ multi-service setup
+version: "3.8"
+
+services:
+  # FastAPI Inference Gateway
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    image: inferiq/gateway:latest
+    container_name: inferiq-gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - INFERIQ_CONFIG_DIR=/app/configs
+      - INFERIQ_GATEWAY_HOST=0.0.0.0
+      - INFERIQ_GATEWAY_PORT=8000
+      - INFERIQ_GATEWAY_WORKERS=1
+      - INFERIQ_BENCHMARK_LOGGING_LEVEL=INFO
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
+    volumes:
+      - ./configs:/app/configs:ro
+      - ./results:/app/results
+      - ${MODEL_CACHE_DIR:-./models}:/models:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      - inferiq-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  # vLLM Worker (optional - for distributed setups)
+  vllm-worker:
+    image: vllm/vllm-openai:latest
+    container_name: inferiq-vllm-worker
+    ports:
+      - "8001:8000"
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=0
+      - VLLM_MODEL=${VLLM_MODEL:-mistralai/Mistral-7B-Instruct-v0.2}
+      - VLLM_TENSOR_PARALLEL_SIZE=1
+      - VLLM_GPU_MEMORY_UTILIZATION=0.90
+    volumes:
+      - ${MODEL_CACHE_DIR:-./models}:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - inferiq-network
+    profiles:
+      - vllm
+    restart: unless-stopped
+
+  # NVIDIA NIM Worker (optional)
+  nim-worker:
+    image: nvcr.io/nim/meta/llama-3-8b-instruct:latest
+    container_name: inferiq-nim-worker
+    ports:
+      - "8002:8000"
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=1
+      - NIM_CACHE_PATH=/models
+      - NIM_MODEL_PROFILE=default
+    volumes:
+      - ${MODEL_CACHE_DIR:-./models}:/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - inferiq-network
+    profiles:
+      - nim
+    restart: unless-stopped
+
+  # Streamlit Dashboard
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    image: inferiq/dashboard:latest
+    container_name: inferiq-dashboard
+    ports:
+      - "8501:8501"
+    environment:
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_HEADLESS=true
+      - STREAMLIT_SERVER_ENABLE_CORS=false
+      - INFERIQ_RESULTS_DIR=/app/results
+    volumes:
+      - ./results:/app/results:ro
+      - ./configs:/app/configs:ro
+    networks:
+      - inferiq-network
+    depends_on:
+      - gateway
+    restart: unless-stopped
+
+  # Benchmark Runner (one-shot service)
+  benchmark:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    image: inferiq/gateway:latest
+    container_name: inferiq-benchmark
+    environment:
+      - INFERIQ_CONFIG_DIR=/app/configs
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
+    volumes:
+      - ./configs:/app/configs:ro
+      - ./results:/app/results
+      - ./scripts:/app/scripts
+      - ${MODEL_CACHE_DIR:-./models}:/models:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      - inferiq-network
+    profiles:
+      - benchmark
+    command: >
+      python scripts/run_benchmark.py --config /app/configs/default.yaml
+
+networks:
+  inferiq-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  model-cache:
+    driver: local
