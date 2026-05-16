@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal, Optional
-from pydantic import BaseModel, Field, field_validator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class ModelBackend(str, Enum):
@@ -26,7 +27,7 @@ class ModelInfo(BaseModel):
     """Information about a registered model."""
     id: str = Field(..., description="Unique model identifier")
     object: Literal["model"] = "model"
-    created: int = Field(default_factory=lambda: int(datetime.now(timezone.utc).timestamp()))
+    created: int = Field(default_factory=lambda: int(datetime.now(UTC).timestamp()))
     owned_by: str = Field(default="inferiq")
     backend: ModelBackend = Field(..., description="Inference backend type")
     display_name: str = Field(..., description="Human-readable model name")
@@ -38,21 +39,21 @@ class CompletionRequest(BaseModel):
     """OpenAI-compatible completion request."""
     model: str = Field(..., description="Model ID to use")
     prompt: str | list[str] = Field(..., description="Prompt text(s)")
-    suffix: Optional[str] = Field(None, description="Suffix for infill")
-    max_tokens: Optional[int] = Field(16, ge=1, description="Maximum tokens to generate")
-    temperature: Optional[float] = Field(1.0, ge=0.0, le=2.0, description="Sampling temperature")
-    top_p: Optional[float] = Field(1.0, ge=0.0, le=1.0, description="Nucleus sampling probability")
-    n: Optional[int] = Field(1, ge=1, le=10, description="Number of completions to generate")
-    stream: Optional[bool] = Field(False, description="Stream response tokens")
-    stop: Optional[str | list[str]] = Field(None, description="Stop sequences")
-    presence_penalty: Optional[float] = Field(0.0, ge=-2.0, le=2.0)
-    frequency_penalty: Optional[float] = Field(0.0, ge=-2.0, le=2.0)
-    logprobs: Optional[int] = Field(None, ge=0, le=5, description="Return top logprobs")
-    echo: Optional[bool] = Field(False)
-    best_of: Optional[int] = Field(None, ge=0)
-    logit_bias: Optional[dict[str, float]] = Field(None)
-    user: Optional[str] = Field(None)
-    
+    suffix: str | None = Field(None, description="Suffix for infill")
+    max_tokens: int | None = Field(16, ge=1, description="Maximum tokens to generate")
+    temperature: float | None = Field(1.0, ge=0.0, le=2.0, description="Sampling temperature")
+    top_p: float | None = Field(1.0, ge=0.0, le=1.0, description="Nucleus sampling probability")
+    n: int | None = Field(1, ge=1, le=10, description="Number of completions to generate")
+    stream: bool | None = Field(False, description="Stream response tokens")
+    stop: str | list[str] | None = Field(None, description="Stop sequences")
+    presence_penalty: float | None = Field(0.0, ge=-2.0, le=2.0)
+    frequency_penalty: float | None = Field(0.0, ge=-2.0, le=2.0)
+    logprobs: int | None = Field(None, ge=0, le=5, description="Return top logprobs")
+    echo: bool | None = Field(False)
+    best_of: int | None = Field(None, ge=0)
+    logit_bias: dict[str, float] | None = Field(None)
+    user: str | None = Field(None)
+
     @field_validator("stop")
     @classmethod
     def validate_stop(cls, v: str | list[str] | None) -> list[str] | None:
@@ -68,8 +69,8 @@ class CompletionChoice(BaseModel):
     """Single completion choice."""
     text: str = Field(..., description="Generated text")
     index: int = Field(..., description="Choice index")
-    logprobs: Optional[dict[str, Any]] = Field(None)
-    finish_reason: Optional[str] = Field(None, description="Reason for stopping")
+    logprobs: dict[str, Any] | None = Field(None)
+    finish_reason: str | None = Field(None, description="Reason for stopping")
 
 
 class CompletionUsage(BaseModel):
@@ -83,41 +84,41 @@ class CompletionResponse(BaseModel):
     """OpenAI-compatible completion response."""
     id: str = Field(..., description="Unique completion ID")
     object: Literal["text_completion"] = "text_completion"
-    created: int = Field(default_factory=lambda: int(datetime.now(timezone.utc).timestamp()))
+    created: int = Field(default_factory=lambda: int(datetime.now(UTC).timestamp()))
     model: str = Field(..., description="Model ID used")
     choices: list[CompletionChoice] = Field(...)
     usage: CompletionUsage = Field(...)
-    system_fingerprint: Optional[str] = Field(None)
+    system_fingerprint: str | None = Field(None)
 
 
 class ChatMessage(BaseModel):
     """Chat message structure."""
     role: Literal["system", "user", "assistant", "tool"] = Field(...)
     content: str = Field(...)
-    name: Optional[str] = Field(None)
-    tool_calls: Optional[list[dict[str, Any]]] = Field(None)
-    tool_call_id: Optional[str] = Field(None)
+    name: str | None = Field(None)
+    tool_calls: list[dict[str, Any]] | None = Field(None)
+    tool_call_id: str | None = Field(None)
 
 
 class ChatCompletionRequest(BaseModel):
     """OpenAI-compatible chat completion request."""
     model: str = Field(..., description="Model ID to use")
     messages: list[ChatMessage] = Field(..., min_length=1)
-    max_tokens: Optional[int] = Field(16, ge=1)
-    temperature: Optional[float] = Field(1.0, ge=0.0, le=2.0)
-    top_p: Optional[float] = Field(1.0, ge=0.0, le=1.0)
-    n: Optional[int] = Field(1, ge=1, le=10)
-    stream: Optional[bool] = Field(False)
-    stop: Optional[str | list[str]] = Field(None)
-    presence_penalty: Optional[float] = Field(0.0, ge=-2.0, le=2.0)
-    frequency_penalty: Optional[float] = Field(0.0, ge=-2.0, le=2.0)
-    logit_bias: Optional[dict[str, float]] = Field(None)
-    user: Optional[str] = Field(None)
-    response_format: Optional[dict[str, Any]] = Field(None)
-    seed: Optional[int] = Field(None)
-    tools: Optional[list[dict[str, Any]]] = Field(None)
-    tool_choice: Optional[str | dict[str, Any]] = Field(None)
-    
+    max_tokens: int | None = Field(16, ge=1)
+    temperature: float | None = Field(1.0, ge=0.0, le=2.0)
+    top_p: float | None = Field(1.0, ge=0.0, le=1.0)
+    n: int | None = Field(1, ge=1, le=10)
+    stream: bool | None = Field(False)
+    stop: str | list[str] | None = Field(None)
+    presence_penalty: float | None = Field(0.0, ge=-2.0, le=2.0)
+    frequency_penalty: float | None = Field(0.0, ge=-2.0, le=2.0)
+    logit_bias: dict[str, float] | None = Field(None)
+    user: str | None = Field(None)
+    response_format: dict[str, Any] | None = Field(None)
+    seed: int | None = Field(None)
+    tools: list[dict[str, Any]] | None = Field(None)
+    tool_choice: str | dict[str, Any] | None = Field(None)
+
     @field_validator("stop")
     @classmethod
     def validate_stop(cls, v: str | list[str] | None) -> list[str] | None:
@@ -133,19 +134,19 @@ class ChatCompletionChoice(BaseModel):
     """Single chat completion choice."""
     index: int = Field(...)
     message: ChatMessage = Field(...)
-    finish_reason: Optional[str] = Field(None)
-    logprobs: Optional[dict[str, Any]] = Field(None)
+    finish_reason: str | None = Field(None)
+    logprobs: dict[str, Any] | None = Field(None)
 
 
 class ChatCompletionResponse(BaseModel):
     """OpenAI-compatible chat completion response."""
     id: str = Field(...)
     object: Literal["chat.completion"] = "chat.completion"
-    created: int = Field(default_factory=lambda: int(datetime.now(timezone.utc).timestamp()))
+    created: int = Field(default_factory=lambda: int(datetime.now(UTC).timestamp()))
     model: str = Field(...)
     choices: list[ChatCompletionChoice] = Field(...)
     usage: CompletionUsage = Field(...)
-    system_fingerprint: Optional[str] = Field(None)
+    system_fingerprint: str | None = Field(None)
 
 
 class GenerateParams(BaseModel):
@@ -156,8 +157,8 @@ class GenerateParams(BaseModel):
     top_k: int = Field(-1, ge=-1)
     repetition_penalty: float = Field(1.0, ge=1.0)
     stop_sequences: list[str] = Field(default_factory=list)
-    seed: Optional[int] = Field(None)
-    logprobs: Optional[int] = Field(None)
+    seed: int | None = Field(None)
+    logprobs: int | None = Field(None)
     echo: bool = Field(False)
 
 
@@ -172,7 +173,7 @@ class GenerateResult(BaseModel):
     tokens_per_second: float = Field(..., description="Throughput in tokens/second")
     finish_reason: str = Field(..., description="Reason for stopping")
     gpu_stats: dict[str, Any] = Field(default_factory=dict, description="GPU statistics during generation")
-    logprobs: Optional[list[dict[str, Any]]] = Field(None)
+    logprobs: list[dict[str, Any]] | None = Field(None)
 
 
 class ModelListResponse(BaseModel):
@@ -184,7 +185,7 @@ class ModelListResponse(BaseModel):
 class HealthStatus(BaseModel):
     """Health check response."""
     status: Literal["healthy", "unhealthy", "degraded"] = Field(...)
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     version: str = Field(default="0.1.0")
     backends: dict[str, str] = Field(default_factory=dict, description="Per-backend health status")
 
@@ -192,7 +193,7 @@ class HealthStatus(BaseModel):
 class ReadyStatus(BaseModel):
     """Readiness probe response."""
     ready: bool = Field(...)
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     loaded_backends: list[str] = Field(default_factory=list)
     failed_backends: list[str] = Field(default_factory=list)
 
@@ -200,8 +201,8 @@ class ReadyStatus(BaseModel):
 class ErrorResponse(BaseModel):
     """Error response model."""
     error: dict[str, Any] = Field(...)
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    request_id: Optional[str] = Field(None)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    request_id: str | None = Field(None)
 
 
 class BenchmarkResult(BaseModel):
@@ -211,7 +212,7 @@ class BenchmarkResult(BaseModel):
     prompt_length: int = Field(..., ge=1)
     batch_size: int = Field(..., ge=1)
     max_tokens: int = Field(..., ge=1)
-    
+
     # Latency metrics (milliseconds)
     ttft_p50_ms: float = Field(..., description="TTFT p50")
     ttft_p95_ms: float = Field(..., description="TTFT p95")
@@ -219,21 +220,21 @@ class BenchmarkResult(BaseModel):
     total_time_p50_ms: float = Field(..., description="Total time p50")
     total_time_p95_ms: float = Field(..., description="Total time p95")
     total_time_p99_ms: float = Field(..., description="Total time p99")
-    
+
     # Throughput metrics
     tokens_per_second: float = Field(...)
-    tokens_per_second_per_gpu: Optional[float] = Field(None)
-    
+    tokens_per_second_per_gpu: float | None = Field(None)
+
     # GPU metrics
     peak_gpu_memory_mb: float = Field(...)
     avg_gpu_utilization: float = Field(...)
-    
+
     # Cost metrics
-    cost_per_1k_tokens: Optional[float] = Field(None, description="USD per 1K tokens")
-    
+    cost_per_1k_tokens: float | None = Field(None, description="USD per 1K tokens")
+
     # Run metadata
     num_runs: int = Field(..., ge=1)
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     config: dict[str, Any] = Field(default_factory=dict)
     raw_results: list[GenerateResult] = Field(default_factory=list)
 
@@ -246,10 +247,10 @@ class GPUStats(BaseModel):
     used_memory_mb: float = Field(...)
     free_memory_mb: float = Field(...)
     utilization_percent: float = Field(..., ge=0.0, le=100.0)
-    temperature_c: Optional[float] = Field(None)
-    power_draw_w: Optional[float] = Field(None)
-    power_limit_w: Optional[float] = Field(None)
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    temperature_c: float | None = Field(None)
+    power_draw_w: float | None = Field(None)
+    power_limit_w: float | None = Field(None)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class ModelConfig(BaseModel):

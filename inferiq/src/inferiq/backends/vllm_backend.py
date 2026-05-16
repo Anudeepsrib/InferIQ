@@ -2,21 +2,21 @@
 
 from __future__ import annotations
 
-import time
 import asyncio
-from typing import Any, Optional
+import time
+from typing import Any
 
-from src.backends.base import Backend, ModelLoadError, GenerationError
-from src.gateway.schemas import GenerateParams, GenerateResult, GPUStats, ModelConfig
-from src.utils.gpu import GPUPoller
-from src.utils.logging import get_logger
+from inferiq.backends.base import Backend, GenerationError, ModelLoadError
+from inferiq.gateway.schemas import GenerateParams, GenerateResult, GPUStats, ModelConfig
+from inferiq.utils.gpu import GPUPoller
+from inferiq.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
 class VLLMBackend(Backend):
     """vLLM inference backend with AsyncLLMEngine."""
-    
+
     def __init__(self, model_config: ModelConfig) -> None:
         """Initialize vLLM backend.
         
@@ -28,14 +28,14 @@ class VLLMBackend(Backend):
         self.tokenizer: Any = None
         self._gpu_poller = GPUPoller(device_id=0)
         self._gpu_poller.initialize()
-        
+
     async def load_model(self) -> None:
         """Load model using vLLM AsyncLLMEngine."""
         try:
-            from vllm import AsyncLLMEngine, AsyncEngineArgs, SamplingParams
-            
+            from vllm import AsyncEngineArgs, AsyncLLMEngine, SamplingParams
+
             config = self.model_config.config
-            
+
             engine_args = AsyncEngineArgs(
                 model=self.model_config.model_id,
                 tensor_parallel_size=config.get("tensor_parallel_size", 1),
@@ -48,24 +48,24 @@ class VLLMBackend(Backend):
                 enable_prefix_caching=config.get("enable_prefix_caching", True),
                 disable_log_stats=True,  # We'll handle our own stats
             )
-            
+
             logger.info(
                 "Loading vLLM model",
                 model=self.model_config.model_id,
                 tp_size=engine_args.tensor_parallel_size,
             )
-            
+
             self.engine = AsyncLLMEngine.from_engine_args(engine_args)
-            
+
             # Wait for model to be ready
             await asyncio.sleep(2)
-            
+
             self._loaded = True
             logger.info(
                 "vLLM model loaded successfully",
                 model=self.model_config.name,
             )
-            
+
         except ImportError as e:
             raise ModelLoadError(
                 "vLLM not installed. Install with: pip install vllm",
@@ -78,11 +78,11 @@ class VLLMBackend(Backend):
                 self.model_config.name,
                 e,
             )
-    
+
     def _build_sampling_params(self, params: GenerateParams) -> Any:
         """Build vLLM SamplingParams from GenerateParams."""
         from vllm import SamplingParams
-        
+
         return SamplingParams(
             n=1,
             max_tokens=params.max_tokens,
@@ -94,7 +94,7 @@ class VLLMBackend(Backend):
             logprobs=params.logprobs,
             seed=params.seed,
         )
-    
+
     async def generate(
         self,
         prompt: str,
@@ -106,54 +106,53 @@ class VLLMBackend(Backend):
                 "Model not loaded. Call load_model() first.",
                 self.model_config.name,
             )
-        
+
         try:
-            from vllm import SamplingParams
-            
+
             sampling_params = self._build_sampling_params(params)
-            
+
             # Record start time
             start_event = self._record_cuda_start()
             start_time = time.perf_counter()
-            
+
             # Submit request
             request_id = f"vllm_{int(time.time() * 1000)}"
             self.engine.add_request(request_id, prompt, sampling_params)
-            
+
             # Stream output and capture first token time
             ttft_recorded = False
             ttft_ms = 0.0
             generated_text = ""
             output_tokens = 0
             finish_reason = "unknown"
-            
+
             while True:
                 request_outputs = await self.engine.get_request_outputs(request_id)
-                
+
                 if not request_outputs:
                     await asyncio.sleep(0.01)
                     continue
-                
+
                 output = request_outputs[0]
-                
+
                 if not ttft_recorded and len(output.outputs) > 0 and output.outputs[0].token_ids:
                     ttft_ms = (time.perf_counter() - start_time) * 1000
                     ttft_recorded = True
-                
+
                 if output.finished:
                     if output.outputs:
                         generated_text = output.outputs[0].text
                         output_tokens = len(output.outputs[0].token_ids)
                         finish_reason = output.outputs[0].finish_reason or "stop"
                     break
-                
+
                 await asyncio.sleep(0.01)
-            
+
             total_time_ms = (time.perf_counter() - start_time) * 1000
-            
+
             # Get GPU stats
             gpu_stats = self._get_gpu_stats_dict()
-            
+
             # Count prompt tokens (approximate)
             prompt_tokens = len(prompt.split())  # Fallback approximation
             try:
@@ -161,7 +160,7 @@ class VLLMBackend(Backend):
                     prompt_tokens = len(self.engine.tokenizer.encode(prompt))
             except Exception:
                 pass
-            
+
             result = GenerateResult(
                 text=generated_text,
                 prompt_tokens=prompt_tokens,
@@ -173,10 +172,10 @@ class VLLMBackend(Backend):
                 finish_reason=finish_reason,
                 gpu_stats=gpu_stats.to_dict() if gpu_stats else {},
             )
-            
+
             self._update_stats(result)
             return result
-            
+
         except Exception as e:
             self._update_stats(
                 GenerateResult(
@@ -197,7 +196,7 @@ class VLLMBackend(Backend):
                 self.model_config.name,
                 e,
             )
-    
+
     async def generate_batch(
         self,
         prompts: list[str],
@@ -209,13 +208,13 @@ class VLLMBackend(Backend):
                 "Model not loaded. Call load_model() first.",
                 self.model_config.name,
             )
-        
+
         results = []
         for prompt in prompts:
             result = await self.generate(prompt, params)
             results.append(result)
         return results
-    
+
     def _record_cuda_start(self) -> Any:
         """Record CUDA start event for precise timing."""
         try:
@@ -227,27 +226,27 @@ class VLLMBackend(Backend):
         except Exception:
             pass
         return None
-    
+
     def _get_gpu_stats_dict(self) -> GPUStats | None:
         """Get GPU stats as GPUStats object."""
         return self._gpu_poller.get_stats()
-    
-    def get_gpu_stats(self) -> Optional[GPUStats]:
+
+    def get_gpu_stats(self) -> GPUStats | None:
         """Get current GPU statistics."""
         return self._gpu_poller.get_stats()
-    
+
     async def health_check(self) -> bool:
         """Check if vLLM engine is healthy."""
         if not self._loaded or self.engine is None:
             return False
-        
+
         try:
             # Try to get engine status
             return True
         except Exception as e:
             logger.warning("vLLM health check failed", error=str(e))
             return False
-    
+
     async def shutdown(self) -> None:
         """Shutdown vLLM engine."""
         if self.engine is not None:
@@ -256,10 +255,10 @@ class VLLMBackend(Backend):
                 self.engine = None
                 import gc
                 gc.collect()
-                
+
                 logger.info("vLLM engine shutdown", model=self.model_config.name)
             except Exception as e:
                 logger.error("Error shutting down vLLM", error=str(e))
-        
+
         self._loaded = False
         self._gpu_poller.shutdown()

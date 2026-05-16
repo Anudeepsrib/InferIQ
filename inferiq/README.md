@@ -4,9 +4,11 @@
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 
-**Production-grade, open-source GPU-optimized LLM serving benchmark and inference gateway.**
+**Production-oriented reference implementation for GPU-optimized LLM inference benchmarking and serving.**
 
-InferIQ demonstrates enterprise-level GPU inference engineering by benchmarking and comparing LLM inference across vLLM, NVIDIA NIM, and NVIDIA NeMo on single and multi-GPU setups. It features CUDA kernel-level profiling, a FastAPI inference gateway with dynamic routing, and a Streamlit dashboard for comprehensive visualization.
+InferIQ demonstrates enterprise-level GPU inference engineering patterns by benchmarking and comparing LLM inference across vLLM, NVIDIA NIM (external), and NVIDIA NeMo on single and multi-GPU setups. It includes optional CUDA profiling via torch.profiler, a FastAPI OpenAI-compatible inference gateway with dynamic routing, and a Streamlit dashboard.
+
+> **Note:** This is a reference implementation and demo. It is not a turnkey production deployment. See SECURITY.md and known limitations below. Real production use requires additional hardening, auth, secret management, and validated autoscaling infrastructure.
 
 ## Overview
 
@@ -22,11 +24,11 @@ InferIQ is a comprehensive framework for:
 | Feature | Description |
 |---------|-------------|
 | Multi-Backend Support | Benchmark vLLM, NVIDIA NIM, and NVIDIA NeMo side-by-side |
-| CUDA Profiling | Kernel-level profiling with torch.profiler, Chrome trace export |
-| Dynamic Routing | Round-robin, least-latency, and least-loaded routing strategies |
-| OpenAI API Compatible | Drop-in replacement for OpenAI API endpoints |
-| Kubernetes Native | HPA support for autoscaling based on GPU metrics |
-| Cost Analysis | Per-token cost estimation based on GPU-hour pricing |
+| CUDA Profiling (optional) | torch.profiler integration with Chrome trace export when GPU available |
+| Dynamic Routing | Round-robin, least-latency, and least-loaded strategies (tested with mocks) |
+| OpenAI API Compatible | Compatible schemas for /v1/models, /v1/completions, /v1/chat/completions |
+| Kubernetes Ready | Example manifests with resource limits, probes; GPU HPA requires Prometheus + DCGM adapter (see docs/kubernetes.md) |
+| Cost Analysis | Per-token cost estimation based on configurable GPU-hour pricing |
 
 ## Architecture
 
@@ -81,15 +83,28 @@ graph TB
 
 ```bash
 # Clone the repository
-git clone https://github.com/inferiq/inferiq.git
-cd inferiq
+git clone https://github.com/Anudeepsrib/InferIQ.git
+cd InferIQ/inferiq
 
-# Install with pip (editable mode)
-pip install -e .
+# Install with pip (editable mode) - works on CPU for demo
+pip install -e ".[dev]"
 
-# Or install with optional dependencies
-pip install -e ".[vllm,nemo]"
+# For GPU backends (vLLM requires CUDA + GPU)
+# pip install -e ".[vllm]"
+# For NeMo (complex install, see docs/gpu-setup.md)
+# pip install -e ".[nemo]"
 ```
+
+**No-GPU / CPU Demo Mode**
+
+```bash
+# Start gateway without loading models (degraded but runnable)
+INFERIQ_SKIP_MODEL_LOAD=true uvicorn inferiq.gateway.app:app --host 127.0.0.1 --port 8000
+
+# Health will report "degraded" with no backends; /ready will 503 until models loaded
+curl http://localhost:8000/health
+```
+
 
 ### Run Benchmarks
 

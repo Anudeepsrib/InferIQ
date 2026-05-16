@@ -1,19 +1,16 @@
 """Health and readiness probes with Prometheus metrics."""
 
 from __future__ import annotations
-import json
-import time
-from datetime import datetime, timezone
-from typing import Any
 
-from fastapi.responses import JSONResponse
+import json
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException
-from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 
-from src.backends.base import Backend
-from src.gateway.schemas import HealthStatus, ReadyStatus
-from src.utils.logging import get_logger
+from inferiq.backends.base import Backend
+from inferiq.gateway.schemas import HealthStatus, ReadyStatus
+from inferiq.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -56,18 +53,18 @@ GPU_MEMORY = Histogram(
 
 class HealthManager:
     """Manages health checks and backend monitoring."""
-    
+
     def __init__(self) -> None:
         """Initialize health manager."""
         self.backends: dict[str, Backend] = {}
-        self.startup_time = datetime.now(timezone.utc)
+        self.startup_time = datetime.now(UTC)
         self._health_status: dict[str, bool] = {}
-    
+
     def register_backend(self, name: str, backend: Backend) -> None:
         """Register a backend for health monitoring."""
         self.backends[name] = backend
         logger.info("Backend registered for health monitoring", name=name)
-    
+
     async def check_health(self) -> HealthStatus:
         """Perform health check on all backends.
         
@@ -76,7 +73,7 @@ class HealthManager:
         """
         backend_status: dict[str, str] = {}
         healthy_count = 0
-        
+
         for name, backend in self.backends.items():
             try:
                 is_healthy = await backend.health_check()
@@ -86,21 +83,24 @@ class HealthManager:
             except Exception as e:
                 backend_status[name] = "error"
                 logger.warning("Health check failed", backend=name, error=str(e))
-        
+
         # Determine overall status
-        if healthy_count == len(self.backends):
+        if len(self.backends) == 0:
+            # No backends loaded (demo mode or startup skip) - service is live but limited
+            status = "degraded"
+        elif healthy_count == len(self.backends):
             status = "healthy"
         elif healthy_count > 0:
             status = "degraded"
         else:
             status = "unhealthy"
-        
+
         return HealthStatus(
             status=status,  # type: ignore
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             backends=backend_status,
         )
-    
+
     async def check_readiness(self) -> ReadyStatus:
         """Check if all backends are loaded and ready.
         
@@ -109,7 +109,7 @@ class HealthManager:
         """
         loaded = []
         failed = []
-        
+
         for name, backend in self.backends.items():
             try:
                 is_healthy = await backend.health_check()
@@ -120,14 +120,14 @@ class HealthManager:
             except Exception as e:
                 failed.append(name)
                 logger.warning("Readiness check failed", backend=name, error=str(e))
-        
+
         return ReadyStatus(
             ready=len(failed) == 0 and len(loaded) > 0,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             loaded_backends=loaded,
             failed_backends=failed,
         )
-    
+
     def record_request(
         self,
         method: str,
@@ -141,12 +141,12 @@ class HealthManager:
             endpoint=endpoint,
             status=str(status_code)
         ).inc()
-        
+
         REQUEST_LATENCY.labels(
             method=method,
             endpoint=endpoint
         ).observe(latency_seconds)
-    
+
     def record_gpu_stats(self, device_id: str, utilization: float, memory_mb: float) -> None:
         """Record GPU statistics."""
         GPU_UTILIZATION.labels(device_id=device_id).observe(utilization)
@@ -178,10 +178,11 @@ async def health_check() -> HealthStatus:
     """
     manager = get_health_manager()
     status = await manager.check_health()
-    
+
     if status.status == "unhealthy":
+        # Only hard fail on truly unhealthy; degraded (e.g. no models in demo) still returns 200 for liveness
         raise HTTPException(status_code=503, detail=status.model_dump())
-    
+
     return status
 
 
@@ -194,13 +195,13 @@ async def readiness_check() -> ReadyStatus:
     """
     manager = get_health_manager()
     status = await manager.check_readiness()
-    
+
     if not status.ready:
         raise HTTPException(
-            status_code=503, 
+            status_code=503,
             detail=json.loads(json.dumps(status.model_dump(), cls=DateTimeEncoder))
         )
-    
+
     return status
 
 
@@ -208,9 +209,9 @@ async def readiness_check() -> ReadyStatus:
 async def metrics() -> Response:
     """Prometheus-compatible metrics endpoint."""
     from fastapi import Response
-    
+
     metrics_data = generate_latest()
-    
+
     return Response(
         content=metrics_data,
         media_type=CONTENT_TYPE_LATEST,

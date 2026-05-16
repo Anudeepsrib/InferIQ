@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import json
 import argparse
+import json
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +22,7 @@ def load_chrome_trace(trace_path: Path) -> dict[str, Any]:
     Returns:
         Trace data dictionary
     """
-    with open(trace_path, 'r') as f:
+    with open(trace_path) as f:
         return json.load(f)
 
 
@@ -37,7 +37,7 @@ def convert_to_nsys_format(
         output_path: Output path for NSys metadata
     """
     events = chrome_trace.get("traceEvents", [])
-    
+
     # Extract CUDA kernel events
     cuda_kernels = []
     for event in events:
@@ -49,7 +49,7 @@ def convert_to_nsys_format(
                 "device": event.get("args", {}).get("device"),
                 "stream": event.get("args", {}).get("stream"),
             })
-    
+
     # Create NSys-compatible metadata
     nsys_metadata = {
         "version": "1.0",
@@ -64,13 +64,13 @@ def convert_to_nsys_format(
             "cpu_events": len([e for e in events if "cpu" in e.get("cat", "").lower()]),
         },
     }
-    
+
     # Write metadata JSON
     with open(output_path, 'w') as f:
         json.dump(nsys_metadata, f, indent=2)
-    
+
     console.print(f"[green]NSys metadata exported:[/green] {output_path}")
-    
+
     # Also generate a summary report
     report_path = output_path.with_suffix(".report.txt")
     with open(report_path, 'w') as f:
@@ -78,7 +78,7 @@ def convert_to_nsys_format(
         f.write("=" * 50 + "\n\n")
         f.write(f"Total CUDA kernels: {len(cuda_kernels)}\n")
         f.write(f"Total trace events: {len(events)}\n\n")
-        
+
         # Top kernels by duration
         sorted_kernels = sorted(cuda_kernels, key=lambda x: x.get("duration_us", 0), reverse=True)
         f.write("Top 20 CUDA kernels by duration:\n")
@@ -86,7 +86,7 @@ def convert_to_nsys_format(
         for i, kernel in enumerate(sorted_kernels[:20], 1):
             duration_ms = kernel.get("duration_us", 0) / 1000.0
             f.write(f"{i}. {kernel.get('name', 'Unknown')[:60]:60s} {duration_ms:8.2f} ms\n")
-    
+
     console.print(f"[green]Report exported:[/green] {report_path}")
 
 
@@ -111,41 +111,41 @@ def main():
         action="store_true",
         help="Process all trace files in directory",
     )
-    
+
     args = parser.parse_args()
-    
+
     output_dir = args.output or args.input.parent
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     if args.batch and args.input.is_dir():
         # Process all trace files in directory
         trace_files = list(args.input.glob("*.json"))
-        
+
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             console=console,
         ) as progress:
             task = progress.add_task("Converting traces...", total=len(trace_files))
-            
+
             for trace_file in trace_files:
                 progress.update(task, description=f"Processing {trace_file.name}...")
-                
+
                 try:
                     chrome_trace = load_chrome_trace(trace_file)
                     output_path = output_dir / trace_file.with_suffix(".nsys.json").name
                     convert_to_nsys_format(chrome_trace, output_path)
                 except Exception as e:
                     console.print(f"[red]Error processing {trace_file}:[/red] {e}")
-                
+
                 progress.advance(task)
-    
+
     else:
         # Process single file
         if not args.input.exists():
             console.print(f"[red]Error:[/red] File not found: {args.input}")
             return 1
-        
+
         try:
             chrome_trace = load_chrome_trace(args.input)
             output_path = output_dir / args.input.with_suffix(".nsys.json").name
@@ -153,7 +153,7 @@ def main():
         except Exception as e:
             console.print(f"[red]Error:[/red] {e}")
             return 1
-    
+
     console.print("\n[bold green]Conversion complete![/bold green]")
     return 0
 

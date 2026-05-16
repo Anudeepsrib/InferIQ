@@ -3,33 +3,33 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from src.backends.vllm_backend import VLLMBackend
-from src.backends.nim_backend import NIMBackend
-from src.config.settings import get_settings
-from src.gateway.health import health_router, get_health_manager
-from src.gateway.middleware import setup_middleware
-from src.gateway.router import ModelRouter, RoutingStrategy
-from src.gateway.schemas import (
+from inferiq.backends.nim_backend import NIMBackend
+from inferiq.backends.vllm_backend import VLLMBackend
+from inferiq.config.settings import get_settings
+from inferiq.gateway.health import get_health_manager, health_router
+from inferiq.gateway.middleware import setup_middleware
+from inferiq.gateway.router import ModelRouter, RoutingStrategy
+from inferiq.gateway.schemas import (
+    ChatCompletionChoice,
     ChatCompletionRequest,
     ChatCompletionResponse,
-    ChatCompletionChoice,
     ChatMessage,
+    CompletionChoice,
     CompletionRequest,
     CompletionResponse,
-    CompletionChoice,
     CompletionUsage,
-    GenerateParams,
-    ModelListResponse,
     ErrorResponse,
+    GenerateParams,
     ModelInfo,
+    ModelListResponse,
 )
-from src.utils.logging import configure_logging, get_logger
+from inferiq.utils.logging import configure_logging, get_logger
 
 logger = get_logger(__name__)
 
@@ -41,79 +41,86 @@ model_router: ModelRouter | None = None
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan manager - load models on startup."""
     global model_router
-    
+
     logger.info("Starting InferIQ Gateway...")
-    
+
     # Load settings
     settings = get_settings()
-    
+
     # Configure logging
     configure_logging(
         level=settings.benchmark.logging.level,
         format_type=settings.benchmark.logging.format,
         log_file=settings.benchmark.logging.file,
     )
-    
+
     # Initialize router
     model_router = ModelRouter(strategy=RoutingStrategy.LEAST_LATENCY)
     health_manager = get_health_manager()
-    
-    # Load configured backends
-    for model_config in settings.models:
-        try:
-            logger.info(
-                "Loading model",
-                name=model_config.name,
-                backend=model_config.backend.value,
-            )
-            
-            if model_config.backend.value == "vllm":
-                backend = VLLMBackend(model_config)
-            elif model_config.backend.value == "nim":
-                backend = NIMBackend(model_config)
-            elif model_config.backend.value == "nemo":
-                from src.backends.nemo_backend import NeMoBackend
-                backend = NeMoBackend(model_config)
-                if not backend.available:
-                    logger.warning(
-                        "NeMo not available, skipping model",
-                        name=model_config.name,
-                    )
-                    continue
-            else:
-                logger.warning(
-                    "Unknown backend, skipping model",
+
+    # Load configured backends (skipped in demo/CPU mode or when explicitly disabled)
+    skip_load = getattr(settings, 'skip_model_load', False) or getattr(settings, 'demo_mode', False)
+    if skip_load:
+        logger.info("Model loading skipped (DEMO_MODE or INFERIQ_SKIP_MODEL_LOAD enabled)")
+        logger.info("Gateway running in limited mode - no inference backends loaded")
+    else:
+        for model_config in settings.models:
+            try:
+                logger.info(
+                    "Loading model",
                     name=model_config.name,
                     backend=model_config.backend.value,
                 )
+
+                if model_config.backend.value == "vllm":
+                    backend = VLLMBackend(model_config)
+                elif model_config.backend.value == "nim":
+                    backend = NIMBackend(model_config)
+                elif model_config.backend.value == "nemo":
+                    from inferiq.backends.nemo_backend import NeMoBackend
+                    backend = NeMoBackend(model_config)
+                    if not getattr(backend, 'available', True):
+                        logger.warning(
+                            "NeMo not available, skipping model",
+                            name=model_config.name,
+                        )
+                        continue
+                else:
+                    logger.warning(
+                        "Unknown backend, skipping model",
+                        name=model_config.name,
+                        backend=model_config.backend.value,
+                    )
+                    continue
+
+                # Load model (may fail gracefully on CPU/no-GPU)
+                await backend.load_model()
+
+                # Register with router and health manager
+                model_router.register_backend(backend, model_config)
+                health_manager.register_backend(model_config.name, backend)
+
+                logger.info("Model loaded successfully", name=model_config.name)
+
+            except Exception as e:
+                logger.error(
+                    "Failed to load model - continuing with limited functionality",
+                    name=model_config.name,
+                    error=str(e),
+                )
+                # Do not crash gateway; degraded mode for health/readiness probes
                 continue
-            
-            # Load model
-            await backend.load_model()
-            
-            # Register with router and health manager
-            model_router.register_backend(backend, model_config)
-            health_manager.register_backend(model_config.name, backend)
-            
-            logger.info("Model loaded successfully", name=model_config.name)
-            
-        except Exception as e:
-            logger.error(
-                "Failed to load model",
-                name=model_config.name,
-                error=str(e),
-            )
-    
+
     logger.info(
         "Gateway startup complete",
         loaded_models=len(model_router.backends) if model_router else 0,
     )
-    
+
     yield
-    
+
     # Shutdown
     logger.info("Shutting down InferIQ Gateway...")
-    
+
     if model_router:
         for model_name, instances in model_router.backends.items():
             for instance in instances:
@@ -126,27 +133,27 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                         model=model_name,
                         error=str(e),
                     )
-    
+
     logger.info("Gateway shutdown complete")
 
 
 def create_app() -> FastAPI:
     """Create and configure FastAPI application."""
     settings = get_settings()
-    
+
     app = FastAPI(
         title="InferIQ Gateway",
         description="Production-grade GPU-optimized LLM inference gateway",
         version="0.1.0",
         lifespan=lifespan,
     )
-    
+
     # Setup middleware
     setup_middleware(app, rate_limit=settings.gateway.rate_limit_requests_per_minute)
-    
+
     # Include health router
     app.include_router(health_router)
-    
+
     return app
 
 
@@ -162,7 +169,7 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
         error=str(exc),
         exc_info=True,
     )
-    
+
     return JSONResponse(
         status_code=500,
         content=ErrorResponse(
@@ -179,9 +186,9 @@ async def list_models() -> ModelListResponse:
     """List available models and their backends."""
     if model_router is None:
         raise HTTPException(status_code=503, detail="Gateway not ready")
-    
+
     models = model_router.get_model_list()
-    
+
     return ModelListResponse(
         data=[
             ModelInfo(
@@ -201,7 +208,7 @@ async def create_completion(request: CompletionRequest) -> CompletionResponse:
     """OpenAI-compatible completions endpoint."""
     if model_router is None:
         raise HTTPException(status_code=503, detail="Gateway not ready")
-    
+
     # Convert to generate params
     params = GenerateParams(
         max_tokens=request.max_tokens or 16,
@@ -210,14 +217,14 @@ async def create_completion(request: CompletionRequest) -> CompletionResponse:
         stop_sequences=request.stop or [],
         seed=request.seed,
     )
-    
+
     try:
         # Handle batch prompts
         if isinstance(request.prompt, list):
             results, instance = await model_router.route_generate_batch(
                 request.model, request.prompt, params
             )
-            
+
             choices = []
             for i, result in enumerate(results):
                 choices.append(CompletionChoice(
@@ -225,7 +232,7 @@ async def create_completion(request: CompletionRequest) -> CompletionResponse:
                     index=i,
                     finish_reason=result.finish_reason,
                 ))
-            
+
             total_usage = CompletionUsage(
                 prompt_tokens=sum(r.prompt_tokens for r in results),
                 completion_tokens=sum(r.completion_tokens for r in results),
@@ -235,26 +242,26 @@ async def create_completion(request: CompletionRequest) -> CompletionResponse:
             result, instance = await model_router.route_generate(
                 request.model, request.prompt, params
             )
-            
+
             choices = [CompletionChoice(
                 text=result.text,
                 index=0,
                 finish_reason=result.finish_reason,
             )]
-            
+
             total_usage = CompletionUsage(
                 prompt_tokens=result.prompt_tokens,
                 completion_tokens=result.completion_tokens,
                 total_tokens=result.total_tokens,
             )
-        
+
         return CompletionResponse(
             id=f"inferiq-{asyncio.get_event_loop().time()}",
             model=request.model,
             choices=choices,
             usage=total_usage,
         )
-        
+
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
@@ -267,7 +274,7 @@ async def create_chat_completion(request: ChatCompletionRequest) -> ChatCompleti
     """OpenAI-compatible chat completions endpoint."""
     if model_router is None:
         raise HTTPException(status_code=503, detail="Gateway not ready")
-    
+
     # Concatenate messages into prompt (simplified - production would use chat template)
     prompt_parts = []
     for msg in request.messages:
@@ -277,9 +284,9 @@ async def create_chat_completion(request: ChatCompletionRequest) -> ChatCompleti
             prompt_parts.append(f"User: {msg.content}")
         elif msg.role == "assistant":
             prompt_parts.append(f"Assistant: {msg.content}")
-    
+
     prompt = "\n".join(prompt_parts) + "\nAssistant:"
-    
+
     # Convert to generate params
     params = GenerateParams(
         max_tokens=request.max_tokens or 16,
@@ -288,12 +295,12 @@ async def create_chat_completion(request: ChatCompletionRequest) -> ChatCompleti
         stop_sequences=request.stop or [],
         seed=request.seed,
     )
-    
+
     try:
         result, instance = await model_router.route_generate(
             request.model, prompt, params
         )
-        
+
         return ChatCompletionResponse(
             id=f"inferiq-{asyncio.get_event_loop().time()}",
             model=request.model,
@@ -313,7 +320,7 @@ async def create_chat_completion(request: ChatCompletionRequest) -> ChatCompleti
                 total_tokens=result.total_tokens,
             ),
         )
-        
+
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
@@ -324,11 +331,11 @@ async def create_chat_completion(request: ChatCompletionRequest) -> ChatCompleti
 def main() -> None:
     """Entry point for running the gateway server."""
     import uvicorn
-    
+
     settings = get_settings()
-    
+
     uvicorn.run(
-        "src.gateway.app:app",
+        "inferiq.gateway.app:app",
         host=settings.gateway.host,
         port=settings.gateway.port,
         workers=settings.gateway.workers,

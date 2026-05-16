@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 
-from src.gateway.schemas import (
+from inferiq.gateway.schemas import (
     GenerateParams,
     GenerateResult,
     GPUStats,
     ModelConfig,
 )
-from src.utils.logging import get_logger
+from inferiq.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -26,29 +26,29 @@ class BackendStats:
     total_tokens_generated: int = 0
     avg_latency_ms: float = 0.0
     peak_memory_mb: float = 0.0
-    last_request_time: Optional[datetime] = None
+    last_request_time: datetime | None = None
     rolling_latencies: list[float] = field(default_factory=list)
-    
+
     def record_request(self, latency_ms: float, tokens: int, success: bool = True) -> None:
         """Record a request completion."""
         self.total_requests += 1
         if not success:
             self.failed_requests += 1
-        
+
         self.total_tokens_generated += tokens
-        self.last_request_time = datetime.now(timezone.utc)
-        
+        self.last_request_time = datetime.now(UTC)
+
         # Update rolling average (keep last 100)
         self.rolling_latencies.append(latency_ms)
         if len(self.rolling_latencies) > 100:
             self.rolling_latencies.pop(0)
-        
+
         self.avg_latency_ms = sum(self.rolling_latencies) / len(self.rolling_latencies)
-    
+
     def update_memory(self, memory_mb: float) -> None:
         """Update peak memory tracking."""
         self.peak_memory_mb = max(self.peak_memory_mb, memory_mb)
-    
+
     @property
     def error_rate(self) -> float:
         """Calculate error rate."""
@@ -63,7 +63,7 @@ class Backend(ABC):
     All inference backends (vLLM, NIM, NeMo) must implement this interface
     to participate in the InferIQ benchmark and gateway.
     """
-    
+
     def __init__(self, model_config: ModelConfig) -> None:
         """Initialize backend with model configuration.
         
@@ -73,29 +73,29 @@ class Backend(ABC):
         self.model_config = model_config
         self.stats = BackendStats()
         self._loaded: bool = False
-        self._gpu_stats: Optional[GPUStats] = None
-        
+        self._gpu_stats: GPUStats | None = None
+
         logger.info(
             "Backend initialized",
             backend=self.__class__.__name__,
             model=model_config.name,
         )
-    
+
     @property
     def name(self) -> str:
         """Return backend identifier."""
         return self.model_config.name
-    
+
     @property
     def loaded(self) -> bool:
         """Return True if model is loaded and ready."""
         return self._loaded
-    
+
     @property
     def backend_type(self) -> str:
         """Return backend type identifier."""
         return self.model_config.backend.value
-    
+
     @abstractmethod
     async def load_model(self) -> None:
         """Load the model into memory.
@@ -104,7 +104,7 @@ class Backend(ABC):
             RuntimeError: If model loading fails
         """
         pass
-    
+
     @abstractmethod
     async def generate(
         self,
@@ -124,7 +124,7 @@ class Backend(ABC):
             RuntimeError: If generation fails
         """
         pass
-    
+
     @abstractmethod
     async def generate_batch(
         self,
@@ -144,16 +144,16 @@ class Backend(ABC):
             RuntimeError: If batch generation fails
         """
         pass
-    
+
     @abstractmethod
-    def get_gpu_stats(self) -> Optional[GPUStats]:
+    def get_gpu_stats(self) -> GPUStats | None:
         """Get current GPU statistics.
         
         Returns:
             GPUStats with memory and utilization, or None if unavailable
         """
         pass
-    
+
     @abstractmethod
     async def health_check(self) -> bool:
         """Check if backend is healthy and responsive.
@@ -162,22 +162,22 @@ class Backend(ABC):
             True if backend is operational
         """
         pass
-    
+
     @abstractmethod
     async def shutdown(self) -> None:
         """Release resources and shutdown backend."""
         pass
-    
+
     async def __aenter__(self) -> Backend:
         """Async context manager entry."""
         if not self._loaded:
             await self.load_model()
         return self
-    
+
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Async context manager exit."""
         await self.shutdown()
-    
+
     def _update_stats(self, result: GenerateResult, success: bool = True) -> None:
         """Update backend statistics from generation result."""
         self.stats.record_request(
@@ -192,7 +192,7 @@ class Backend(ABC):
 
 class BackendError(Exception):
     """Base exception for backend errors."""
-    
+
     def __init__(self, message: str, backend_name: str, original_error: Exception | None = None):
         super().__init__(message)
         self.backend_name = backend_name

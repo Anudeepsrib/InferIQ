@@ -61,22 +61,23 @@ dev = [
     "mypy>=1.7.0",
     "pre-commit>=3.6.0",
 ]
-all = ["inferiq[vllm,nemo,dev]"]
+all = ["vllm", "nemo", "dev"]
 
 [project.scripts]
 inferiq-benchmark = "scripts.run_benchmark:main"
-inferiq-gateway = "src.gateway.app:main"
+inferiq-gateway = "inferiq.gateway.app:main"
 inferiq-dashboard = "dashboard.app:main"
 
 [project.urls]
-Homepage = "https://github.com/inferiq/inferiq"
-Documentation = "https://inferiq.readthedocs.io"
-Repository = "https://github.com/inferiq/inferiq"
-Issues = "https://github.com/inferiq/inferiq/issues"
+Homepage = "https://github.com/Anudeepsrib/InferIQ"
+Documentation = "https://github.com/Anudeepsrib/InferIQ#readme"
+Repository = "https://github.com/Anudeepsrib/InferIQ"
+Issues = "https://github.com/Anudeepsrib/InferIQ/issues"
 
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["src*", "dashboard*", "scripts*"]
+where = ["src", "."]
+include = ["inferiq*", "dashboard*", "scripts*"]
+exclude = ["tests*", "tests.*", "*.tests*"]
 
 [tool.setuptools.package-data]
 "*" = ["*.yaml", "*.yml", "*.json"]
@@ -84,6 +85,8 @@ include = ["src*", "dashboard*", "scripts*"]
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+
+[tool.ruff.lint]
 select = [
     "E",   # pycodestyle errors
     "F",   # Pyflakes

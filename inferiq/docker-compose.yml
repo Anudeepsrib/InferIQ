@@ -23,13 +23,14 @@ services:
       - ./configs:/app/configs:ro
       - ./results:/app/results
       - ${MODEL_CACHE_DIR:-./models}:/models:ro
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    # GPU resources are opt-in via profiles or docker-compose.override.yml for GPU hosts
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
     networks:
       - inferiq-network
     healthcheck:

@@ -22,9 +22,13 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Copy requirements and install dependencies
 WORKDIR /app
 COPY pyproject.toml ./
+COPY src/ ./src/
+COPY dashboard/ ./dashboard/
+COPY scripts/ ./scripts/
 
 # Install dependencies (without vLLM for smaller image, mount separately if needed)
-RUN uv pip install -e . --no-cache
+# Use non-editable install for production image reproducibility
+RUN uv pip install . --no-cache
 
 # Production stage
 FROM python:3.11-slim-bookworm AS production
@@ -59,5 +63,10 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 # Expose port
 EXPOSE 8000
 
+# Non-root user for security (P1 compliance)
+RUN groupadd -r appgroup && useradd -r -g appgroup -u 1000 appuser \
+    && chown -R appuser:appgroup /app /opt/venv
+USER appuser
+
 # Run the gateway
-CMD ["python", "-m", "uvicorn", "src.gateway.app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "uvicorn", "inferiq.gateway.app:app", "--host", "0.0.0.0", "--port", "8000"]

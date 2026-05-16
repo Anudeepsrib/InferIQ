@@ -5,14 +5,14 @@ from __future__ import annotations
 import json
 import statistics
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
-from src.gateway.schemas import GenerateResult, ModelBackend
-from src.utils.logging import get_logger
+from inferiq.gateway.schemas import GenerateResult, ModelBackend
+from inferiq.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -60,34 +60,34 @@ class BenchmarkMetrics:
     batch_size: int
     max_tokens: int
     num_runs: int
-    
+
     # Latency metrics
     ttft: LatencyMetrics = field(default_factory=LatencyMetrics)
     total_time: LatencyMetrics = field(default_factory=LatencyMetrics)
-    
+
     # Throughput metrics
     tokens_per_second: float = 0.0
     tokens_per_second_per_gpu: float = 0.0
     prompts_per_second: float = 0.0
-    
+
     # Token metrics
     total_prompt_tokens: int = 0
     total_completion_tokens: int = 0
     total_tokens: int = 0
     avg_prompt_tokens: float = 0.0
     avg_completion_tokens: float = 0.0
-    
+
     # GPU metrics
     gpu: GPUMetrics = field(default_factory=GPUMetrics)
-    
+
     # Cost metrics
     cost: CostMetrics = field(default_factory=CostMetrics)
-    
+
     # Metadata
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     config: dict[str, Any] = field(default_factory=dict)
     raw_results: list[GenerateResult] = field(default_factory=list)
-    
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
@@ -132,21 +132,21 @@ class BenchmarkMetrics:
                 "cost_per_1k_tokens": self.cost.cost_per_1k_tokens,
             },
         }
-    
+
     def save_json(self, path: Path | str) -> None:
         """Save metrics to JSON file."""
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         with open(path, "w") as f:
             json.dump(self.to_dict(), f, indent=2)
-        
+
         logger.info("Metrics saved", path=str(path))
 
 
 class MetricsComputer:
     """Compute benchmark metrics from raw results."""
-    
+
     def __init__(self, gpu_hour_rate: float = 2.0) -> None:
         """Initialize metrics computer.
         
@@ -154,13 +154,13 @@ class MetricsComputer:
             gpu_hour_rate: Cost per GPU hour in USD
         """
         self.gpu_hour_rate = gpu_hour_rate
-    
+
     @staticmethod
     def compute_percentiles(values: list[float]) -> LatencyMetrics:
         """Compute latency percentiles from values."""
         if not values:
             return LatencyMetrics()
-        
+
         arr = np.array(values)
         return LatencyMetrics(
             p50_ms=float(np.percentile(arr, 50)),
@@ -171,7 +171,7 @@ class MetricsComputer:
             mean_ms=float(np.mean(arr)),
             std_ms=float(np.std(arr)),
         )
-    
+
     def compute_metrics(
         self,
         model_name: str,
@@ -198,41 +198,41 @@ class MetricsComputer:
         """
         if not results:
             raise ValueError("Cannot compute metrics from empty results")
-        
+
         # Extract latency values
         ttft_values = [r.ttft_ms for r in results]
         total_time_values = [r.total_time_ms for r in results]
-        
+
         # Compute latency metrics
         ttft_metrics = self.compute_percentiles(ttft_values)
         total_metrics = self.compute_percentiles(total_time_values)
-        
+
         # Token metrics
         total_prompt_tokens = sum(r.prompt_tokens for r in results)
         total_completion_tokens = sum(r.completion_tokens for r in results)
         total_tokens = total_prompt_tokens + total_completion_tokens
-        
+
         avg_completion_tokens = total_completion_tokens / len(results)
-        
+
         # Throughput calculations
         # Total time is sum of all generation times (sequential processing)
         total_time_sec = sum(total_time_values) / 1000
-        
+
         if total_time_sec > 0:
             tokens_per_second = total_completion_tokens / total_time_sec
             prompts_per_second = len(results) * batch_size / total_time_sec
         else:
             tokens_per_second = 0.0
             prompts_per_second = 0.0
-        
+
         # GPU metrics
         gpu_metrics = self._compute_gpu_metrics(results, gpu_stats_list)
-        
+
         # Cost metrics
         cost_metrics = self._compute_cost_metrics(
             total_time_sec, total_tokens, self.gpu_hour_rate
         )
-        
+
         metrics = BenchmarkMetrics(
             model_name=model_name,
             backend=backend,
@@ -252,7 +252,7 @@ class MetricsComputer:
             cost=cost_metrics,
             raw_results=results,
         )
-        
+
         logger.info(
             "Metrics computed",
             model=model_name,
@@ -260,9 +260,9 @@ class MetricsComputer:
             throughput=f"{tokens_per_second:.2f} tok/s",
             p99_latency=f"{total_metrics.p99_ms:.2f}ms",
         )
-        
+
         return metrics
-    
+
     def _compute_gpu_metrics(
         self,
         results: list[GenerateResult],
@@ -272,7 +272,7 @@ class MetricsComputer:
         # Extract GPU stats from results
         memory_values = []
         utilization_values = []
-        
+
         for result in results:
             if result.gpu_stats:
                 mem = result.gpu_stats.get("used_memory_mb", 0)
@@ -281,7 +281,7 @@ class MetricsComputer:
                     memory_values.append(mem)
                 if util > 0:
                     utilization_values.append(util)
-        
+
         if gpu_stats_list:
             for stats in gpu_stats_list:
                 mem = stats.get("used_memory_mb", 0)
@@ -290,20 +290,20 @@ class MetricsComputer:
                     memory_values.append(mem)
                 if util > 0:
                     utilization_values.append(util)
-        
+
         if not memory_values:
             return GPUMetrics()
-        
+
         peak_memory = max(memory_values)
         avg_memory = statistics.mean(memory_values)
-        
+
         avg_util = statistics.mean(utilization_values) if utilization_values else 0.0
         peak_util = max(utilization_values) if utilization_values else 0.0
-        
+
         # Memory efficiency: tokens per GB
         total_completion_tokens = sum(r.completion_tokens for r in results)
         memory_efficiency = (total_completion_tokens / (peak_memory / 1024)) if peak_memory > 0 else 0.0
-        
+
         return GPUMetrics(
             peak_memory_mb=peak_memory,
             avg_memory_mb=avg_memory,
@@ -311,7 +311,7 @@ class MetricsComputer:
             peak_utilization=peak_util,
             memory_efficiency=memory_efficiency,
         )
-    
+
     def _compute_cost_metrics(
         self,
         total_time_sec: float,
@@ -322,10 +322,10 @@ class MetricsComputer:
         # Convert seconds to GPU hours
         total_gpu_hours = total_time_sec / 3600
         total_cost = total_gpu_hours * gpu_hour_rate
-        
+
         # Cost per 1K tokens
         cost_per_1k = (total_cost / total_tokens) * 1000 if total_tokens > 0 else 0.0
-        
+
         return CostMetrics(
             gpu_hour_rate=gpu_hour_rate,
             total_gpu_hours=total_gpu_hours,

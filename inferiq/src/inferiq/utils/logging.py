@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import sys
 import logging
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -51,7 +51,7 @@ def configure_logging(
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.stdlib.ExtraAdder(),
     ]
-    
+
     if format_type == "json":
         processors = shared_processors + [
             structlog.processors.dict_tracebacks,
@@ -61,7 +61,7 @@ def configure_logging(
         processors = shared_processors + [
             structlog.dev.ConsoleRenderer(),
         ]
-    
+
     structlog.configure(
         processors=processors,
         wrapper_class=structlog.make_filtering_bound_logger(getattr(logging, level)),
@@ -69,20 +69,20 @@ def configure_logging(
         logger_factory=structlog.PrintLoggerFactory(),
         cache_logger_on_first_use=True,
     )
-    
+
     # Configure standard library logging
     logging.basicConfig(
         format="%(message)s",
         stream=sys.stdout,
         level=getattr(logging, level),
     )
-    
+
     # Add file handler if specified
     if log_file:
         file_handler = logging.FileHandler(Path(log_file))
         file_handler.setLevel(getattr(logging, level))
         logging.getLogger().addHandler(file_handler)
-    
+
     return structlog.get_logger()
 
 

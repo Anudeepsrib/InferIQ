@@ -5,17 +5,17 @@ from __future__ import annotations
 import random
 from typing import Literal
 
-from src.utils.logging import get_logger
+from inferiq.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
 class WorkloadGenerator:
     """Generate synthetic prompts at specified token lengths."""
-    
+
     # Token approximations (words to tokens ratio varies by model)
     AVG_TOKENS_PER_WORD = 1.3
-    
+
     # Sample text corpus for synthetic generation
     SAMPLE_WORDS = [
         "machine", "learning", "artificial", "intelligence", "neural", "network",
@@ -32,7 +32,7 @@ class WorkloadGenerator:
         "recognition", "generation", "classification", "regression",
         "clustering", "embedding", "vector", "database", "search",
     ]
-    
+
     def __init__(self, tokenizer_name: str | None = None) -> None:
         """Initialize workload generator.
         
@@ -41,7 +41,7 @@ class WorkloadGenerator:
         """
         self.tokenizer_name = tokenizer_name
         self._tokenizer = None
-        
+
         if tokenizer_name:
             try:
                 from transformers import AutoTokenizer
@@ -53,7 +53,7 @@ class WorkloadGenerator:
                     name=tokenizer_name,
                     error=str(e),
                 )
-    
+
     def estimate_tokens(self, text: str) -> int:
         """Estimate number of tokens in text."""
         if self._tokenizer is not None:
@@ -61,11 +61,11 @@ class WorkloadGenerator:
                 return len(self._tokenizer.encode(text))
             except Exception:
                 pass
-        
+
         # Fallback: word-based estimation
         words = len(text.split())
         return int(words * self.AVG_TOKENS_PER_WORD)
-    
+
     def generate_prompt(
         self,
         target_tokens: int,
@@ -89,16 +89,16 @@ class WorkloadGenerator:
             actual_target = int(random.gauss(target_tokens, target_tokens * variance))
         else:
             actual_target = target_tokens
-        
+
         actual_target = max(10, actual_target)  # Minimum 10 tokens
-        
+
         # Estimate words needed
         target_words = int(actual_target / self.AVG_TOKENS_PER_WORD)
-        
+
         # Build prompt
         words = []
         current_tokens = 0
-        
+
         # Add instruction prefix
         prefixes = [
             "Explain the following concept in detail:",
@@ -110,15 +110,15 @@ class WorkloadGenerator:
         prefix = random.choice(prefixes)
         words.extend(prefix.split())
         current_tokens = self.estimate_tokens(" ".join(words))
-        
+
         # Add random words until we reach target
         while current_tokens < actual_target:
             word = random.choice(self.SAMPLE_WORDS)
             words.append(word)
             current_tokens = self.estimate_tokens(" ".join(words))
-        
+
         prompt = " ".join(words)
-        
+
         # Verify and log actual token count
         actual_tokens = self.estimate_tokens(prompt)
         logger.debug(
@@ -127,9 +127,9 @@ class WorkloadGenerator:
             actual=actual_tokens,
             words=len(words),
         )
-        
+
         return prompt
-    
+
     def generate_batch(
         self,
         target_tokens: int,
@@ -150,7 +150,7 @@ class WorkloadGenerator:
             self.generate_prompt(target_tokens, distribution)
             for _ in range(batch_size)
         ]
-    
+
     def generate_variable_batch(
         self,
         token_range: tuple[int, int],
@@ -171,7 +171,7 @@ class WorkloadGenerator:
             target = random.randint(min_tokens, max_tokens)
             prompts.append(self.generate_prompt(target, distribution="fixed"))
         return prompts
-    
+
     def generate_dataset(
         self,
         prompt_lengths: list[int],
@@ -189,7 +189,7 @@ class WorkloadGenerator:
             Dictionary mapping (prompt_length, batch_size) to list of batches
         """
         dataset: dict[tuple[int, int], list[list[str]]] = {}
-        
+
         for length in prompt_lengths:
             for batch_size in batch_sizes:
                 batches = []
@@ -197,13 +197,13 @@ class WorkloadGenerator:
                     batch = self.generate_batch(length, batch_size)
                     batches.append(batch)
                 dataset[(length, batch_size)] = batches
-        
+
         logger.info(
             "Generated benchmark dataset",
             configurations=len(dataset),
             total_batches=sum(len(b) for b in dataset.values()),
         )
-        
+
         return dataset
 
 

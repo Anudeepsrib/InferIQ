@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any
-
+import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import pandas as pd
 import streamlit as st
+from plotly.subplots import make_subplots
 
-from src.benchmark.metrics import BenchmarkMetrics
+from inferiq.benchmark.metrics import BenchmarkMetrics
 
 
 def plot_latency_violin(
@@ -29,7 +27,7 @@ def plot_latency_violin(
     data = []
     for m in metrics_list:
         latency_data = m.raw_results if m.raw_results else []
-        
+
         for result in latency_data:
             latency = (
                 result.total_time_ms if metric_type == "total_time"
@@ -42,14 +40,14 @@ def plot_latency_violin(
                 "Prompt Length": m.prompt_length,
                 "Batch Size": m.batch_size,
             })
-    
+
     if not data:
         fig = go.Figure()
         fig.add_annotation(text="No data available", showarrow=False)
         return fig
-    
+
     df = pd.DataFrame(data)
-    
+
     fig = px.violin(
         df,
         x="Backend",
@@ -60,13 +58,13 @@ def plot_latency_violin(
         hover_data=["Model", "Prompt Length", "Batch Size"],
         title=f"{metric_type.replace('_', ' ').title()} Distribution by Backend",
     )
-    
+
     fig.update_layout(
         xaxis_title="Backend",
         yaxis_title=f"{metric_type.replace('_', ' ').title()} (ms)",
         showlegend=False,
     )
-    
+
     return fig
 
 
@@ -104,23 +102,23 @@ def plot_latency_percentiles(
             "TTFT (ms)": m.ttft.p99_ms,
             "Total Time (ms)": m.total_time.p99_ms,
         })
-    
+
     if not data:
         fig = go.Figure()
         fig.add_annotation(text="No data available", showarrow=False)
         return fig
-    
+
     df = pd.DataFrame(data)
-    
+
     fig = make_subplots(
         rows=1,
         cols=2,
         subplot_titles=("TTFT Percentiles", "Total Time Percentiles"),
     )
-    
+
     for metric in ["p50", "p95", "p99"]:
         metric_df = df[df["Metric"] == metric]
-        
+
         fig.add_trace(
             go.Bar(
                 name=metric,
@@ -132,7 +130,7 @@ def plot_latency_percentiles(
             row=1,
             col=1,
         )
-        
+
         fig.add_trace(
             go.Bar(
                 name=metric,
@@ -144,13 +142,13 @@ def plot_latency_percentiles(
             row=1,
             col=2,
         )
-    
+
     fig.update_layout(
         barmode="group",
         height=500,
         title_text="Latency Percentiles by Backend",
     )
-    
+
     return fig
 
 
@@ -182,14 +180,14 @@ def plot_latency_heatmap(
             "Batch Size": m.batch_size,
             "Latency (ms)": latency,
         })
-    
+
     if not data:
         fig = go.Figure()
         fig.add_annotation(text="No data available", showarrow=False)
         return fig
-    
+
     df = pd.DataFrame(data)
-    
+
     # Create separate heatmaps per backend
     backends = df["Backend"].unique()
     fig = make_subplots(
@@ -198,16 +196,16 @@ def plot_latency_heatmap(
         subplot_titles=[f"{b} Backend" for b in backends],
         vertical_spacing=0.1,
     )
-    
+
     for i, backend in enumerate(backends):
         backend_df = df[df["Backend"] == backend]
-        
+
         pivot = backend_df.pivot(
             index="Prompt Length",
             columns="Batch Size",
             values="Latency (ms)",
         )
-        
+
         fig.add_trace(
             go.Heatmap(
                 z=pivot.values,
@@ -222,23 +220,23 @@ def plot_latency_heatmap(
             row=i + 1,
             col=1,
         )
-    
+
     fig.update_layout(
         height=300 * len(backends),
         title_text=f"{percentile.upper()} {metric_type.replace('_', ' ').title()} Heatmap",
     )
-    
+
     return fig
 
 
 def render_latency_section(metrics_list: list[BenchmarkMetrics]) -> None:
     """Render latency visualization section in Streamlit."""
     st.header("Latency Analysis")
-    
+
     if not metrics_list:
         st.warning("No benchmark data available for latency analysis.")
         return
-    
+
     # Filters
     col1, col2 = st.columns(2)
     with col1:
@@ -247,23 +245,23 @@ def render_latency_section(metrics_list: list[BenchmarkMetrics]) -> None:
             ["total_time", "ttft"],
             format_func=lambda x: "Total Generation Time" if x == "total_time" else "Time to First Token",
         )
-    
+
     with col2:
         view_type = st.radio(
             "View",
             ["Distribution", "Percentiles", "Heatmap"],
             horizontal=True,
         )
-    
+
     # Render selected view
     if view_type == "Distribution":
         fig = plot_latency_violin(metrics_list, metric_type)
         st.plotly_chart(fig, use_container_width=True)
-    
+
     elif view_type == "Percentiles":
         fig = plot_latency_percentiles(metrics_list)
         st.plotly_chart(fig, use_container_width=True)
-    
+
     elif view_type == "Heatmap":
         percentile = st.selectbox("Percentile", ["p50", "p95", "p99"])
         fig = plot_latency_heatmap(metrics_list, metric_type, percentile)

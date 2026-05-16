@@ -104,6 +104,8 @@ celerybeat.pid
 
 # Environments
 .env
+.env.*
+!.env.example
 .venv
 env/
 venv/
@@ -231,3 +233,18 @@ node_modules/
 # Build artifacts
 *.tar.gz
 *.zip
+
+# Additional InferIQ specific (ensure generated artifacts ignored)
+results/*.chrome_trace.json
+results/*.nsys-rep
+results/*.nsys.json
+results/*.ncu-rep
+.cache/
+.cache/huggingface/
+*.log
+logs/
+traces/
+profiling/
+mlruns/
+mlartifacts/
+wandb/

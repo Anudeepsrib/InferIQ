@@ -2,22 +2,20 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
-from typing import Any, Optional
 
 import yaml
 from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from src.gateway.schemas import ModelBackend, ModelConfig
+from inferiq.gateway.schemas import ModelBackend, ModelConfig
 
 
 class LoggingConfig(BaseModel):
     """Logging configuration."""
     level: str = Field(default="INFO")
     format: str = Field(default="json")
-    file: Optional[str] = Field(default=None)
+    file: str | None = Field(default=None)
 
 
 class TimeoutConfig(BaseModel):
@@ -72,7 +70,7 @@ class VLLMBackendConfig(BaseModel):
     gpu_memory_utilization: float = Field(default=0.90, ge=0.0, le=1.0)
     max_num_seqs: int = Field(default=256, ge=1)
     max_num_batched_tokens: int = Field(default=4096, ge=1)
-    quantization: Optional[str] = Field(default=None)
+    quantization: str | None = Field(default=None)
     dtype: str = Field(default="auto")
     trust_remote_code: bool = Field(default=False)
 
@@ -80,7 +78,7 @@ class VLLMBackendConfig(BaseModel):
 class NIMBackendConfig(BaseModel):
     """NVIDIA NIM-specific configuration."""
     base_url: str = Field(default="http://localhost:8000")
-    api_key: Optional[str] = Field(default=None)
+    api_key: str | None = Field(default=None)
     timeout: float = Field(default=120.0, ge=0.0)
     max_retries: int = Field(default=3, ge=0)
     retry_delay: float = Field(default=1.0, ge=0.0)
@@ -89,7 +87,7 @@ class NIMBackendConfig(BaseModel):
 
 class NeMoBackendConfig(BaseModel):
     """NeMo-specific configuration."""
-    checkpoint_path: Optional[str] = Field(default=None)
+    checkpoint_path: str | None = Field(default=None)
     tensor_model_parallel_size: int = Field(default=1, ge=1)
     pipeline_model_parallel_size: int = Field(default=1, ge=1)
     precision: str = Field(default="bf16")
@@ -117,57 +115,59 @@ class GatewayConfig(BaseModel):
 
 class Settings(BaseSettings):
     """Application settings loaded from environment and config files."""
-    
+
     model_config = SettingsConfigDict(
         env_prefix="INFERIQ_",
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
-    
+
     # Paths
     config_dir: Path = Field(default=Path("configs"))
     results_dir: Path = Field(default=Path("results"))
-    
+
     # Config files
     benchmark_config_file: str = Field(default="default.yaml")
     models_config_file: str = Field(default="models.yaml")
-    
+
     # Sub-configs (loaded from YAML)
     benchmark: BenchmarkConfig = Field(default_factory=BenchmarkConfig)
     backends: BackendsConfig = Field(default_factory=BackendsConfig)
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
-    
+
     # Model registry
     models: list[ModelConfig] = Field(default_factory=list)
     default_models: list[str] = Field(default_factory=list)
-    
+
     # Runtime settings
-    cuda_visible_devices: Optional[str] = Field(default=None)
+    cuda_visible_devices: str | None = Field(default=None)
     torch_compile: bool = Field(default=False)
-    
+    skip_model_load: bool = Field(default=False)
+    demo_mode: bool = Field(default=False)
+
     @field_validator("config_dir", "results_dir", mode="before")
     @classmethod
     def validate_path(cls, v: str | Path) -> Path:
         """Ensure path is a Path object."""
         return Path(v) if isinstance(v, str) else v
-    
+
     def load_config_files(self) -> None:
         """Load configuration from YAML files."""
         # Load benchmark config
         benchmark_path = self.config_dir / self.benchmark_config_file
         if benchmark_path.exists():
-            with open(benchmark_path, "r", encoding="utf-8") as f:
+            with open(benchmark_path, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
                 if data and "benchmark" in data:
                     self.benchmark = BenchmarkConfig(**data["benchmark"])
                 if data and "backends" in data:
                     self.backends = BackendsConfig(**data["backends"])
-        
+
         # Load models config
         models_path = self.config_dir / self.models_config_file
         if models_path.exists():
-            with open(models_path, "r", encoding="utf-8") as f:
+            with open(models_path, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
                 if data and "registry" in data:
                     self.models = [ModelConfig(**m) for m in data["registry"]]
@@ -175,18 +175,18 @@ class Settings(BaseSettings):
                     defaults = data["defaults"]
                     if "benchmark_models" in defaults:
                         self.default_models = defaults["benchmark_models"]
-    
-    def get_model_config(self, name: str) -> Optional[ModelConfig]:
+
+    def get_model_config(self, name: str) -> ModelConfig | None:
         """Get model configuration by name."""
         for model in self.models:
             if model.name == name:
                 return model
         return None
-    
+
     def get_models_by_backend(self, backend: ModelBackend) -> list[ModelConfig]:
         """Get all models for a specific backend."""
         return [m for m in self.models if m.backend == backend]
-    
+
     def get_backend_config(self, backend: ModelBackend) -> BaseModel:
         """Get configuration for a specific backend."""
         config_map = {
@@ -198,7 +198,7 @@ class Settings(BaseSettings):
 
 
 # Global settings instance
-_settings: Optional[Settings] = None
+_settings: Settings | None = None
 
 
 def get_settings() -> Settings:
